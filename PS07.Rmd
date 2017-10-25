@@ -1,6 +1,6 @@
 ---
 title: "STAT/MATH 495: Problem Set 07"
-author: "WRITE YOUR NAME(S) HERE"
+author: "Vickie Ip"
 date: "2017-10-24"
 output:
   html_document:
@@ -22,50 +22,148 @@ set.seed(76)
 library(tidyverse)
 library(broom)
 library(knitr)
+library(ROCR)
+library(readr)
 
-train <- read_csv("data/cs-training.csv") %>% 
-  rename(Id = X1)
-test <- read_csv("data/cs-test.csv") %>% 
-  rename(Id = X1)
-submission <- read_csv("data/sampleEntry.csv")
+train <- read_csv("~/PS07/cs-training.csv")
+test <- read_csv("~/PS07/cs-test.csv")
+colnames(train)[1] <- "ID"  #Changing X1 to the ID column
 ```
-
-Information on the competition can be found [here](https://www.kaggle.com/c/GiveMeSomeCredit/data).
-
-
 
 # Collaboration
 
 Please indicate who you collaborated with on this assignment: 
 
+In this problem set, we have to create a binary classifier to predict whether or not an individual experienced 90 days past due delinquency or worse in the last 2 years with a single predictor. To find the best binary classifier out of the three, we can calculate the Area under the ROC curve in order to quantify the performance of each predictor.
 
 
-# Build binary classifier
-
-Build the binary classifier based on a single predictor variable: `DebtRatio`,
-`age`, or `MonthlyIncome`. Justify this choice.
-
+# Plotting an ROC curve
 ```{r}
+#Fit/train model
+mod_age <- as.formula(SeriousDlqin2yrs ~ age)
+mod_log_age <- glm(mod_age, data=train, family = "binomial")
 
+#Predict outcomes for test data
+log_odds_hat_age <- predict(mod_log_age, newdata=test)
+p_hat <- 1/(1 + exp(-log_odds_hat_age))
 ```
 
-
-
-# ROC curve
-
-Based on the ultimate classifier you choose, plot a corresponding ROC curve.
-
 ```{r}
-
+#Creating a fitted model
+fitted_model_age <- mod_log_age %>% 
+  broom::augment() %>% 
+  as_tibble() %>% 
+  mutate(p_hat = 1/(1 + exp(-.fitted)))
+#Making predictions
+predictions <- mod_log_age %>% 
+  broom::augment(newdata=test) %>% 
+  mutate(p_hat = 1/(1 + exp(-.fitted)))
 ```
 
+```{r}
+train_augmented <- mod_log_age %>% 
+  broom::augment() %>% 
+  as_tibble() %>% 
+  mutate(p_hat = 1/(1+exp(-.fitted)))
 
+pred <- prediction(predictions = train_augmented$p_hat, labels = train_augmented$SeriousDlqin2yrs)
+perf <- performance(pred, "tpr","fpr")
 
-# ROC curve for random guessing
+auc <- as.numeric(performance(pred,"auc")@y.values) ;auc
+```
 
-Instead of using any predictor information as you did above, switch your
-predictions to random guesses and plot the resulting ROC curve.
+```{r message=FALSE}
+plot(perf, main=paste("Area Under the Curve =", round(auc, 3)))
+abline(c(0, 1), lty=2)
+```
+
+```{r echo=FALSE}
+#Create submission file
+submission <- data_frame(id = test$X1, Probability = predictions$p_hat)
+write_csv(submission, "submission.csv")
+```
+
+When we run the same code with the other predictors, we get the following AUC values:
+
+```{r include = FALSE}
+#Monthly Income
+mod_inc <- as.formula(SeriousDlqin2yrs ~ MonthlyIncome)
+mod_log_inc <- glm(mod_inc, data=train, family = "binomial")
+
+log_odds_hat_inc <- predict(mod_log_inc, newdata=test)
+p_hat <- 1/(1 + exp(-log_odds_hat_inc))
+```
+
+```{r include = FALSE, warning=FALSE}
+fitted_model_inc <- mod_log_inc %>% 
+  broom::augment() %>% 
+  as_tibble() %>% 
+  mutate(p_hat = 1/(1 + exp(-.fitted)))
+predictions <- mod_log_inc %>% 
+  broom::augment(newdata=test) %>% 
+  mutate(p_hat = 1/(1 + exp(-.fitted)))
+```
+
+```{r include=FALSE}
+train_augmented <- mod_log_inc %>% 
+  broom::augment() %>% 
+  as_tibble() %>% 
+  mutate(p_hat = 1/(1+exp(-.fitted)))
+
+pred <- prediction(predictions = train_augmented$p_hat, labels = train_augmented$SeriousDlqin2yrs)
+perf <- performance(pred, "tpr","fpr")
+
+auc_inc <- as.numeric(performance(pred,"auc")@y.values) ;auc_inc
+```
+
+```{r include=FALSE}
+#Debt Ratio
+mod_debt <- as.formula(SeriousDlqin2yrs ~ DebtRatio)
+mod_log_debt <- glm(mod_debt, data=train, family = "binomial")
+
+log_odds_hat_debt <- predict(mod_log_debt, newdata=test)
+p_hat <- 1/(1 + exp(-log_odds_hat_debt))
+```
+
+```{r include = FALSE, warning=FALSE}
+fitted_model_debt <- mod_log_debt %>% 
+  broom::augment() %>% 
+  as_tibble() %>% 
+  mutate(p_hat = 1/(1 + exp(-.fitted)))
+predictions <- mod_log_debt %>% 
+  broom::augment(newdata=test) %>% 
+  mutate(p_hat = 1/(1 + exp(-.fitted)))
+```
+
+```{r include=FALSE}
+train_augmented <- mod_log_debt %>% 
+  broom::augment() %>% 
+  as_tibble() %>% 
+  mutate(p_hat = 1/(1+exp(-.fitted)))
+
+pred <- prediction(predictions = train_augmented$p_hat, labels = train_augmented$SeriousDlqin2yrs)
+perf <- performance(pred, "tpr","fpr")
+
+auc_debt <- as.numeric(performance(pred,"auc")@y.values) ; auc_debt
+```
+
+Predictor      |  AUC   |
+---------------|--------|
+Age            | 0.637  |
+Monthly Income | 0.576  |
+Debt Ratio     | 0.476  |
+
+Based on the AUC values, `Age` would be the best predictor in predicting whether or not an individual experiened 90 days past due deliquency because it has the highest AUC out of the three predictors. A higher AUC means that the classifier is able to generate a higher True Positive Rate relative to its False Positive Rate better than a randomly simulated classifier for all possible classificaton thresholds that range from 0 to 1.
+
+# ROC curve based on random guessing
+
+To fit an ROC curve that is based on random guessing, I would change the predictions part of the model to a random variable. Notice that the AUC for this ROC Curve is very close to 0.5, meaning that this generalized model can't truly distinguish between the two classes (0 or 1), therefore its True Positive Rate and False Positive Rate are nearly identical to each other.
 
 ```{r}
+x <- runif(n = length(train_augmented$SeriousDlqin2yrs), min = 0, max = 1)
+pred2 <- prediction(predictions = x, labels = train_augmented$SeriousDlqin2yrs)
+perf2 <- performance(pred2, "tpr","fpr")
 
+auc <- as.numeric(performance(pred2,"auc")@y.values) ;auc
+plot(perf2, main=paste("Area Under the Curve =", round(auc, 3)))
 ```
